@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <!-- Adds the COOP/COEP headers static hosts can't send, so WebAssembly can use several threads. -->
+        <script src="./coi-serviceworker.js"></script>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+        <title>ChantScanner</title>
+        <meta name="description" content="ChantScanner: photograph an Anglican psalm chant and get it back as editable, playable ABC notation. The AI model runs on your device." />
+        <meta name="theme-color" content="#0b0f17" media="(prefers-color-scheme: dark)" />
+        <meta name="theme-color" content="#f4f6fb" media="(prefers-color-scheme: light)" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link crossorigin="anonymous" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+        <script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/abcjs@6.5.2/dist/abcjs-basic-min.js"></script>
+        <link rel="stylesheet" crossorigin="anonymous" href="https://cdn.jsdelivr.net/npm/abcjs@6.5.2/abcjs-audio.css" />
+        <link rel="stylesheet" href="./style.css" />
+    </head>
+    <body>
+        <div class="backdrop" aria-hidden="true"></div>
+
+        <header class="hero">
+            <div class="brand">
+                <svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 9h10M7 12h10M7 15h10" /></svg>
+                ChantScanner
+            </div>
+            <div class="badge"><span class="dot"></span> On-device AI · LFM2.5-VL 450M · WebGPU</div>
+            <h1>Psalm chant <span class="arrow">→</span> <span class="grad">ABC</span></h1>
+            <p class="lead">Point your camera at an Anglican chant. A vision model running in your browser reads the four parts and gives you music you can edit, transpose and play.</p>
+            <ul class="specs">
+                <li><svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm12-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>Single &amp; double chants</li>
+                <li><svg viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 4.5 3.4 8.3 8 9 4.6-.7 8-4.5 8-9V6l-8-3Z" /></svg>Nothing is uploaded</li>
+                <li><svg viewBox="0 0 24 24"><path d="M4 14.9A7 7 0 1 1 15.7 8h1.8a4.5 4.5 0 0 1 2.5 8.2M12 12v9m-4-4 4 4 4-4" /></svg>583 MB, downloaded once</li>
+            </ul>
+        </header>
+
+        <main>
+            <section class="card" id="model-card">
+                <div class="card-head">
+                    <span class="step">01</span>
+                    <h2>Model</h2>
+                    <span class="pill" id="device-pill" hidden></span>
+                </div>
+                <div class="row">
+                    <button class="btn primary" id="load-button">
+                        <svg viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M5 21h14" /></svg>
+                        Load model
+                    </button>
+                    <span class="hint">583 MB the first time, then cached by your browser.</span>
+                </div>
+                <div class="meter" id="progress" hidden><div class="meter-fill" id="progress-fill"></div></div>
+                <div class="status" id="status" role="status" aria-live="polite">Fastest in a browser with WebGPU (recent Chrome, Edge or Safari). Others fall back to the CPU.</div>
+            </section>
+
+            <section class="card" id="image-card">
+                <div class="card-head">
+                    <span class="step">02</span>
+                    <h2>Chant image</h2>
+                </div>
+                <div class="sources">
+                    <button class="source" id="camera-button">
+                        <svg viewBox="0 0 24 24"><path d="M3 8.5A2.5 2.5 0 0 1 5.5 6h1.8l1.5-2h6.4l1.5 2h1.8A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5v-9Z" /><circle cx="12" cy="12.5" r="3.5" /></svg>
+                        <span class="source-title">Camera</span>
+                        <span class="source-hint">Take a photo</span>
+                    </button>
+                    <label class="source">
+                        <svg viewBox="0 0 24 24"><path d="M4 16v2.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V16M12 4v12m-5-7 5-5 5 5" /></svg>
+                        <span class="source-title">Upload</span>
+                        <span class="source-hint">Photo, scan or screenshot</span>
+                        <input type="file" id="file-input" accept="image/*" />
+                    </label>
+                    <button class="source" id="paste-button">
+                        <svg viewBox="0 0 24 24"><rect x="6" y="4" width="12" height="17" rx="2" /><path d="M9 4.5V3.5A1.5 1.5 0 0 1 10.5 2h3A1.5 1.5 0 0 1 15 3.5v1M9 10h6m-6 4h6" /></svg>
+                        <span class="source-title">Paste</span>
+                        <span class="source-hint">or Ctrl+V / ⌘V</span>
+                    </button>
+                </div>
+                <input type="file" id="camera-input" accept="image/*" capture="environment" hidden />
+                <div class="viewer" id="viewer" hidden>
+                    <img id="preview" alt="The image sent to the model" />
+                    <div class="scanline" id="scanline" hidden></div>
+                </div>
+                <div class="row between" id="preview-row" hidden>
+                    <span class="hint mono" id="preview-note"></span>
+                    <button class="btn ghost" id="transcribe-button" disabled>
+                        <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3M18 3v4h-4M6 21v-4h4" /></svg>
+                        Transcribe again
+                    </button>
+                </div>
+                <p class="tips">Crop to <strong>one chant</strong>. Keep the page flat and well lit. Pointed text around it is fine.</p>
+                <div class="drop-overlay" id="drop-overlay">Drop the image to use it</div>
+            </section>
+
+            <section class="card" id="result-card">
+                <div class="card-head">
+                    <span class="step">03</span>
+                    <h2>Result</h2>
+                    <span class="reading" id="reading" hidden><span class="spinner"></span><span id="reading-text">Reading the music…</span></span>
+                    <button class="btn ghost small" id="stop-button" hidden>Stop</button>
+                </div>
+
+                <div class="toolbar">
+                    <div class="control">
+                        <span class="control-label">Transpose</span>
+                        <div class="stepper">
+                            <button id="transpose-down" aria-label="Transpose down a semitone">−</button>
+                            <output id="transpose-display">0</output>
+                            <button id="transpose-up" aria-label="Transpose up a semitone">+</button>
+                        </div>
+                    </div>
+                    <div class="control">
+                        <span class="control-label">Voices</span>
+                        <div class="segmented" role="group" aria-label="Voices shown and played">
+                            <button class="voice active" id="voice-S" aria-pressed="true">S</button>
+                            <button class="voice active" id="voice-A" aria-pressed="true">A</button>
+                            <button class="voice active" id="voice-T" aria-pressed="true">T</button>
+                            <button class="voice active" id="voice-B" aria-pressed="true">B</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="audio" class="audio"></div>
+                <div class="paper">
+                    <div id="paper"></div>
+                    <div class="empty" id="empty">
+                        <svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm12-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
+                        The chant appears here once it's read. You can also paste ABC into the editor below.
+                    </div>
+                </div>
+                <p class="warning">Check it against the page: the notes are usually right, but the composer's name often isn't.</p>
+
+                <div class="editor-head">
+                    <span class="control-label">ABC notation · editable</span>
+                    <div class="row tight">
+                        <button class="btn ghost small" id="copy-button">Copy</button>
+                        <button class="btn ghost small" id="download-button">Download .abc</button>
+                    </div>
+                </div>
+                <textarea id="abc" wrap="off" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="ABC notation" placeholder="X:1&#10;…"></textarea>
+            </section>
+        </main>
+
+        <footer>
+            <p><strong>Single and double chants only</strong>, in four parts on two staves; triple and quadruple chants, hymns and plainsong won't come out right.</p>
+            <p>
+                Model: <a href="https://huggingface.co/yclicc/PsalmOMR-LFM2.5-VL-450M-GGUF">PsalmOMR LFM2.5-VL-450M</a>, a fine-tune of Liquid AI's
+                <a href="https://huggingface.co/LiquidAI/LFM2.5-VL-450M">LFM2.5-VL-450M</a>, used under the
+                <a href="https://huggingface.co/LiquidAI/LFM2.5-VL-450M/blob/main/LICENSE">LFM Open License v1.0</a>. Runs with
+                <a href="https://huggingface.co/docs/transformers.js">Transformers.js</a>; engraving and playback by <a href="https://www.abcjs.net/">abcjs</a>.
+            </p>
+        </footer>
+
+        <dialog id="camera-dialog" aria-label="Camera">
+            <div class="cam">
+                <div class="cam-top">
+                    <span>Fit the chant inside the frame</span>
+                    <button class="icon-btn" id="camera-close" aria-label="Close camera">
+                        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></svg>
+                    </button>
+                </div>
+                <div class="cam-stage" id="cam-stage">
+                    <video id="cam-video" playsinline muted autoplay></video>
+                    <div class="guide" id="guide"><i></i><i></i><i></i><i></i></div>
+                </div>
+                <label class="cam-shape">
+                    <span>Wide</span>
+                    <input type="range" id="guide-shape" min="0.12" max="0.9" step="0.01" value="0.3" aria-label="Frame height" />
+                    <span>Tall</span>
+                </label>
+                <div class="cam-controls">
+                    <button class="icon-btn" id="camera-flip" aria-label="Switch camera" hidden>
+                        <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3M18 3v4h-4M6 21v-4h4" /></svg>
+                    </button>
+                    <button class="shutter" id="camera-shoot" aria-label="Take photo"></button>
+                    <span class="icon-btn placeholder"></span>
+                </div>
+            </div>
+        </dialog>
+
+        <script src="./app.js"></script>
+    </body>
+</html>
